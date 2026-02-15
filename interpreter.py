@@ -80,11 +80,16 @@ cursor.close()
 connection = mysql.connector.connect(user='root', host='localhost', database='Homework_1')
 cursor = connection.cursor()
 
-for senator in senators_to_sql:
-    insertSenator(cursor, senator)
-for vote in votes_to_sql:
-    insertVote(cursor, vote)
-for vote in votes_cast_to_sql:
-    insertVoteCast(cursor, vote)
+# for senator in senators_to_sql:
+#     insertSenator(cursor, senator)
+# for vote in votes_to_sql:
+#     insertVote(cursor, vote)
+# for vote in votes_cast_to_sql:
+#     insertVoteCast(cursor, vote)
+
+cursor.executemany("Insert into VOTE (CongressNumber, SessionNumber, Year, Date, VoteNumber) values (%s, %s, %s, %s, %s)", votes_to_sql)
+cursor.executemany("Insert into SENATOR (MemberId, FirstName, LastName, Party, State) values (%s, %s, %s, %s, %s)", senators_to_sql)
+cursor.executemany("Insert into VOTECAST (MemberId, CongressNumber, SessionNumber, VoteNumber, VoteChar)  values (%s, %s, %s, %s, %s)", votes_cast_to_sql)
+
 connection.commit()
 cursor.close()
