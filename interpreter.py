@@ -1,23 +1,35 @@
 from datetime import datetime
 from typing import Set
-
-senators_to_sql = []
-votes_to_sql = []
-votes_cast_to_sql = []
 from lxml import etree
 from lxml.etree import ElementTree
 from pathlib import Path
 
-import mysql.connector
+senator_sql_list = []
+vote_sql_list = []
+votecast_sql_list = []
 
+import mysql.connector
 connection = mysql.connector.connect(user='root', host='localhost')
 
 folder_path = Path("./xml")
-
 xml_files = list(folder_path.glob("*.xml"))
 
-
 def convertVoteCast(vote_cast):
+    """
+    Convert a roll-call vote label from the XML into a single-character code.
+
+    The Senate vote XML use "Yea" and "Nay". Our SQL schema stores votes as a single character.
+    Mapping:
+        - "Yea" -> "Y"
+        - "Nay" -> "N"
+        - anything else -> "A"
+
+    Args:
+        vote_cast: The vote label string from the XML (e.g., "Yea", "Nay").
+
+    Returns:
+        A one-character vote code: "Y", "N", or "A".
+    """
     if vote_cast == 'Yea':
         return 'Y'
 
@@ -28,20 +40,22 @@ def convertVoteCast(vote_cast):
 
 
 def convertDate(date):
+    """
+       Convert an XML date string into ISO-8601 format (YYYY-MM-DD).
+
+       The vote XML date field is typically in a "Month day, year" format
+       (e.g., "January 31, 2024"). This function normalizes it into ISO date string.
+
+       Args:
+           date: Date string from the XML (e.g., "January 31, 2024").
+
+       Returns:
+           ISO date string formatted as "YYYY-MM-DD".
+    """
     date_split = date.split(',')
     day = date_split[0] + date_split[1]
 
     return datetime.strptime(day, '%B %d %Y').strftime('%Y-%m-%d')
-
-def insertVoteCast(cursor, vote):
-    cursor.execute("Insert into VOTECAST (MemberId, CongressNumber, SessionNumber, VoteNumber, VoteChar) values (%s, %s, %s, %s, %s)", vote)
-
-def insertVote(cursor, vote):
-    cursor.execute("Insert into VOTE (CongressNumber, SessionNumber, Year, Date, VoteNumber) values (%s, %s, %s, %s, %s)", vote)
-
-def insertSenator(cursor, senator):
-    # print(senator)
-    cursor.execute("Insert into SENATOR (MemberId, FirstName, LastName, Party, State) values (%s, %s, %s, %s, %s)", senator)
 
 senator_ids: Set[str] = set()
 for xml_file in xml_files:
@@ -54,17 +68,19 @@ for xml_file in xml_files:
             convertDate(root.find("vote_date").text),
                          root.find("vote_number").text
                          )
-    votes_to_sql.append(vote)
+    vote_sql_list.append(vote)
+
     senators = tree.xpath("//member")
     for senator in senators:
         if senator.find("lis_member_id").text not in senator_ids:
-            senators_to_sql.append((senator.find("lis_member_id").text,
-                                    senator.find("first_name").text,
-                                    senator.find("last_name").text,
-                                    senator.find("party").text,
-                                    senator.find("state").text))
+            senator_sql_list.append((senator.find("lis_member_id").text,
+                                     senator.find("first_name").text,
+                                     senator.find("last_name").text,
+                                     senator.find("party").text,
+                                     senator.find("state").text))
             senator_ids.add(senator.find("lis_member_id").text)
-        votes_cast_to_sql.append((
+
+        votecast_sql_list.append((
             senator.find("lis_member_id").text, vote[0], vote[1], vote[4], convertVoteCast(senator.find("vote_cast").text)
         ))
 
@@ -74,22 +90,15 @@ cursor = connection.cursor()
 with open('Schema.sql', 'r') as f:
     cursor.execute(f.read())
 
-connection.commit()
+connection.commit()  # somehow executing the file breaks the cursor, so have to restart here
 cursor.close()
 
 connection = mysql.connector.connect(user='root', host='localhost', database='Homework_1')
 cursor = connection.cursor()
 
-# for senator in senators_to_sql:
-#     insertSenator(cursor, senator)
-# for vote in votes_to_sql:
-#     insertVote(cursor, vote)
-# for vote in votes_cast_to_sql:
-#     insertVoteCast(cursor, vote)
-
-cursor.executemany("Insert into VOTE (CongressNumber, SessionNumber, Year, Date, VoteNumber) values (%s, %s, %s, %s, %s)", votes_to_sql)
-cursor.executemany("Insert into SENATOR (MemberId, FirstName, LastName, Party, State) values (%s, %s, %s, %s, %s)", senators_to_sql)
-cursor.executemany("Insert into VOTECAST (MemberId, CongressNumber, SessionNumber, VoteNumber, VoteChar)  values (%s, %s, %s, %s, %s)", votes_cast_to_sql)
+cursor.executemany("Insert into VOTE (CongressNumber, SessionNumber, Year, Date, VoteNumber) values (%s, %s, %s, %s, %s)", vote_sql_list)
+cursor.executemany("Insert into SENATOR (MemberId, FirstName, LastName, Party, State) values (%s, %s, %s, %s, %s)", senator_sql_list)
+cursor.executemany("Insert into VOTECAST (MemberId, CongressNumber, SessionNumber, VoteNumber, VoteChar)  values (%s, %s, %s, %s, %s)", votecast_sql_list)
 
 connection.commit()
 cursor.close()
